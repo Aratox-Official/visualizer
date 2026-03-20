@@ -1,6 +1,264 @@
-<body style="margin: 0; background: #050505; overflow: hidden;">
-    <canvas id="visualizer"></canvas>
-    <div style="position: absolute; top: 20px; left: 20px; z-index: 10;">
-        <input type="file" id="audio-input" accept="audio/*" />
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JS Audio Visualizer Editor</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --sidebar: #1e293b;
+            --accent: #38bdf8;
+            --text: #f8fafc;
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* --- Sidebar UI --- */
+        #controls {
+            width: 320px;
+            background: var(--sidebar);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            border-right: 1px solid #334155;
+            box-shadow: 4px 0 15px rgba(0,0,0,0.3);
+            z-index: 10;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        label { font-size: 0.85rem; color: #94a3b8; font-weight: 600; }
+
+        input[type="range"], input[type="color"] {
+            width: 100%;
+            cursor: pointer;
+        }
+
+        button {
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            background: var(--accent);
+            color: var(--bg);
+            font-weight: bold;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        button:disabled { background: #475569; cursor: not-allowed; }
+
+        /* --- Preview Area --- */
+        #preview-container {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            background: radial-gradient(circle, #1e293b 0%, #0f172a 100%);
+        }
+
+        canvas {
+            max-width: 90%;
+            max-height: 70%;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            background: #000;
+        }
+
+        #status {
+            margin-top: 15px;
+            font-size: 0.9rem;
+            color: var(--accent);
+        }
+    </style>
+</head>
+<body>
+
+<aside id="controls">
+    <h2>Visualizer Editor</h2>
+    
+    <div class="control-group">
+        <label>Audio File</label>
+        <input type="file" id="audioInput" accept="audio/*">
     </div>
+
+    <hr style="border: 0; border-top: 1px solid #334155;">
+
+    <div class="control-group">
+        <label>Bar Color</label>
+        <input type="color" id="colorPicker" value="#38bdf8">
+    </div>
+
+    <div class="control-group">
+        <label>Bar Quantity (Sensitivity)</label>
+        <input type="range" id="barCount" min="32" max="256" step="32" value="64">
+    </div>
+
+    <div class="control-group">
+        <label>Visual Height</label>
+        <input type="range" id="visualHeight" min="1" max="5" step="0.5" value="2.5">
+    </div>
+
+    <div class="control-group">
+        <label>Rounding</label>
+        <input type="range" id="rounding" min="0" max="20" value="5">
+    </div>
+
+    <button id="recordBtn">Start Export (Record)</button>
+    <a id="downloadLink" style="display:none; text-align:center; color: var(--accent);">Download Finished Video</a>
+</aside>
+
+<main id="preview-container">
+    <canvas id="visualizer"></canvas>
+    <div id="status">Upload an audio file to begin tinkering...</div>
+</main>
+
+<script>
+    const canvas = document.getElementById('visualizer');
+    const ctx = canvas.getContext('2d');
+    const audioInput = document.getElementById('audioInput');
+    const recordBtn = document.getElementById('recordBtn');
+    
+    let audioCtx, analyser, source, dataArray;
+    let isRecording = false;
+    let mediaRecorder;
+    let recordedChunks = [];
+
+    canvas.width = 1280;
+    canvas.height = 720;
+
+    audioInput.onchange = function() {
+        const files = this.files;
+        if (files.length === 0) return;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            initAudio(e.target.result);
+        };
+        reader.readAsArrayBuffer(files[0]);
+        document.getElementById('status').innerText = "Playing & Analyzing...";
+    };
+
+    function initAudio(data) {
+        if (audioCtx) audioCtx.close();
+        
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioCtx.createAnalyser();
+        
+        audioCtx.decodeAudioData(data, (buffer) => {
+            source = audioCtx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(analyser);
+            analyser.connect(audioCtx.destination);
+            
+            analyser.fftSize = 512; 
+            const bufferLength = analyser.frequencyBinCount;
+            dataArray = new Uint8Array(bufferLength);
+            
+            source.start(0);
+            draw();
+        });
+    }
+
+    function draw() {
+        if (!analyser) return;
+        requestAnimationFrame(draw);
+
+        const color = document.getElementById('colorPicker').value;
+        const barCount = parseInt(document.getElementById('barCount').value);
+        const heightMult = parseFloat(document.getElementById('visualHeight').value);
+        const radius = parseInt(document.getElementById('rounding').value);
+
+        analyser.getByteFrequencyData(dataArray);
+
+        ctx.fillStyle = 'black';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        const barWidth = (canvas.width / barCount) * 0.8;
+        let x = (canvas.width - (barWidth * barCount)) / 2;
+
+        for (let i = 0; i < barCount; i++) {
+            const val = dataArray[i]; 
+            const barHeight = val * heightMult;
+
+            ctx.fillStyle = color;
+            
+            roundRect(ctx, x, (canvas.height / 2) - (barHeight / 2), barWidth, barHeight, radius);
+
+            x += barWidth + (canvas.width / barCount) * 0.2;
+        }
+    }
+
+    function roundRect(ctx, x, y, width, height, radius) {
+        ctx.beginPath();
+        ctx.moveTo(x + radius, y);
+        ctx.lineTo(x + width - radius, y);
+        ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+        ctx.lineTo(x + width, y + height - radius);
+        ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+        ctx.lineTo(x + radius, y + height);
+        ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+        ctx.lineTo(x, y + radius);
+        ctx.quadraticCurveTo(x, y, x + radius, y);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    // --- Recording Logic ---
+    recordBtn.onclick = () => {
+        if (!isRecording) {
+            startRecording();
+        } else {
+            stopRecording();
+        }
+    };
+
+    function startRecording() {
+        recordedChunks = [];
+        const stream = canvas.captureStream(60);
+        mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp9' });
+
+        mediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) recordedChunks.push(e.data);
+        };
+
+        mediaRecorder.onstop = () => {
+            const blob = new Blob(recordedChunks, { type: 'video/webm' });
+            const url = URL.createObjectURL(blob);
+            const link = document.getElementById('downloadLink');
+            link.href = url;
+            link.download = 'visualizer_export.webm';
+            link.style.display = 'block';
+            link.innerText = "Download Exported Video";
+        };
+
+        mediaRecorder.start();
+        isRecording = true;
+        recordBtn.innerText = "Stop & Save Video";
+        recordBtn.style.background = "#ef4444";
+    }
+
+    function stopRecording() {
+        mediaRecorder.stop();
+        isRecording = false;
+        recordBtn.innerText = "Start Export (Record)";
+        recordBtn.style.background = "var(--accent)";
+    }
+</script>
+
 </body>
+</html>
