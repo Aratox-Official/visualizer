@@ -2,172 +2,103 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JS Audio Visualizer Editor</title>
+    <title>Pro Visualizer Editor</title>
     <style>
-        :root {
-            --bg: #0f172a;
-            --sidebar: #1e293b;
-            --accent: #38bdf8;
-            --text: #f8fafc;
-        }
-
-        body {
-            margin: 0;
-            font-family: 'Inter', sans-serif;
-            background: var(--bg);
-            color: var(--text);
-            display: flex;
-            height: 100vh;
-            overflow: hidden;
-        }
-
-        /* --- Sidebar UI --- */
-        #controls {
-            width: 320px;
-            background: var(--sidebar);
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-            border-right: 1px solid #334155;
-            box-shadow: 4px 0 15px rgba(0,0,0,0.3);
-            z-index: 10;
-        }
-
-        .control-group {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        label { font-size: 0.85rem; color: #94a3b8; font-weight: 600; }
-
-        input[type="range"], input[type="color"] {
-            width: 100%;
-            cursor: pointer;
-        }
-
-        button {
-            padding: 12px;
-            border: none;
-            border-radius: 6px;
-            background: var(--accent);
-            color: var(--bg);
-            font-weight: bold;
-            cursor: pointer;
-            transition: opacity 0.2s;
-        }
-
-        button:disabled { background: #475569; cursor: not-allowed; }
-
-        /* --- Preview Area --- */
-        #preview-container {
-            flex-grow: 1;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            position: relative;
-            background: radial-gradient(circle, #1e293b 0%, #0f172a 100%);
-        }
-
-        canvas {
-            max-width: 90%;
-            max-height: 70%;
-            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
-            background: #000;
-        }
-
-        #status {
-            margin-top: 15px;
-            font-size: 0.9rem;
-            color: var(--accent);
-        }
+        :root { --bg: #0f172a; --sidebar: #1e293b; --accent: #38bdf8; --text: #f8fafc; }
+        body { margin: 0; font-family: sans-serif; background: var(--bg); color: var(--text); display: flex; height: 100vh; overflow: hidden; }
+        #controls { width: 320px; background: var(--sidebar); padding: 20px; display: flex; flex-direction: column; gap: 15px; border-right: 1px solid #334155; overflow-y: auto; }
+        .control-group { display: flex; flex-direction: column; gap: 5px; }
+        label { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
+        input { width: 100%; }
+        button { padding: 12px; border: none; border-radius: 6px; background: var(--accent); color: var(--bg); font-weight: bold; cursor: pointer; margin-top: 10px; }
+        #preview-container { flex-grow: 1; display: flex; align-items: center; justify-content: center; background: #000; position: relative; }
+        canvas { max-width: 95%; max-height: 95%; aspect-ratio: 16/9; box-shadow: 0 0 50px rgba(0,0,0,0.8); }
+        .recording-overlay { position: absolute; top: 20px; right: 20px; background: rgba(239, 68, 68, 0.8); padding: 10px 20px; border-radius: 20px; display: none; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
     </style>
 </head>
 <body>
 
 <aside id="controls">
-    <h2>Visualizer Editor</h2>
-    
+    <h3>Project Settings</h3>
     <div class="control-group">
-        <label>Audio File</label>
+        <label>1. Audio Track</label>
         <input type="file" id="audioInput" accept="audio/*">
     </div>
+    <div class="control-group">
+        <label>2. Background Image</label>
+        <input type="file" id="bgInput" accept="image/*">
+    </div>
 
-    <hr style="border: 0; border-top: 1px solid #334155;">
-
+    <hr style="border:0; border-top:1px solid #334155; margin: 10px 0;">
+    
     <div class="control-group">
         <label>Bar Color</label>
         <input type="color" id="colorPicker" value="#38bdf8">
     </div>
-
-    <div class="control-group">
-        <label>Bar Quantity (Sensitivity)</label>
-        <input type="range" id="barCount" min="32" max="256" step="32" value="64">
-    </div>
-
     <div class="control-group">
         <label>Visual Height</label>
-        <input type="range" id="visualHeight" min="1" max="5" step="0.5" value="2.5">
+        <input type="range" id="visualHeight" min="0.1" max="4" step="0.1" value="1.5">
     </div>
-
     <div class="control-group">
-        <label>Rounding</label>
-        <input type="range" id="rounding" min="0" max="20" value="5">
+        <label>Bar Gap</label>
+        <input type="range" id="barGap" min="0" max="10" value="2">
     </div>
 
-    <button id="recordBtn">Start Export (Record)</button>
-    <a id="downloadLink" style="display:none; text-align:center; color: var(--accent);">Download Finished Video</a>
+    <button id="recordBtn">Export Full Video</button>
+    <p id="status" style="font-size: 0.8rem; color: #38bdf8;"></p>
+    <a id="downloadLink" style="display:none; color: var(--accent); text-align: center;">⬇ Download MP4/WebM</a>
 </aside>
 
 <main id="preview-container">
+    <div class="recording-overlay" id="recIndicator">● RECORDING FULL TRACK</div>
     <canvas id="visualizer"></canvas>
-    <div id="status">Upload an audio file to begin tinkering...</div>
 </main>
 
 <script>
     const canvas = document.getElementById('visualizer');
     const ctx = canvas.getContext('2d');
     const audioInput = document.getElementById('audioInput');
-    const recordBtn = document.getElementById('recordBtn');
+    const bgInput = document.getElementById('bgInput');
     
-    let audioCtx, analyser, source, dataArray;
+    let audioCtx, analyser, source, dataArray, bgImage;
     let isRecording = false;
     let mediaRecorder;
     let recordedChunks = [];
 
-    canvas.width = 1280;
-    canvas.height = 720;
+    canvas.width = 1920; 
+    canvas.height = 1080;
+
+    // Handle Background Image
+    bgInput.onchange = (e) => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            bgImage = new Image();
+            bgImage.onload = () => draw(); 
+            bgImage.src = event.target.result;
+        };
+        reader.readAsDataURL(e.target.files[0]);
+    };
 
     audioInput.onchange = function() {
-        const files = this.files;
-        if (files.length === 0) return;
-
         const reader = new FileReader();
-        reader.onload = function(e) {
-            initAudio(e.target.result);
-        };
-        reader.readAsArrayBuffer(files[0]);
-        document.getElementById('status').innerText = "Playing & Analyzing...";
+        reader.onload = (e) => initAudio(e.target.result);
+        reader.readAsArrayBuffer(this.files[0]);
     };
 
     function initAudio(data) {
         if (audioCtx) audioCtx.close();
-        
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         analyser = audioCtx.createAnalyser();
-        
         audioCtx.decodeAudioData(data, (buffer) => {
             source = audioCtx.createBufferSource();
             source.buffer = buffer;
             source.connect(analyser);
             analyser.connect(audioCtx.destination);
+            analyser.fftSize = 256;
+            dataArray = new Uint8Array(analyser.frequencyBinCount);
             
-            analyser.fftSize = 512; 
-            const bufferLength = analyser.frequencyBinCount;
-            dataArray = new Uint8Array(bufferLength);
+            source.onended = () => { if(isRecording) stopRecording(); };
             
             source.start(0);
             draw();
@@ -175,90 +106,83 @@
     }
 
     function draw() {
-        if (!analyser) return;
         requestAnimationFrame(draw);
+        
+        if (bgImage) {
+            ctx.drawImage(bgImage, 0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = "rgba(0,0,0,0.3)";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        } else {
+            ctx.fillStyle = 'black';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
 
-        const color = document.getElementById('colorPicker').value;
-        const barCount = parseInt(document.getElementById('barCount').value);
-        const heightMult = parseFloat(document.getElementById('visualHeight').value);
-        const radius = parseInt(document.getElementById('rounding').value);
-
+        if (!analyser) return;
         analyser.getByteFrequencyData(dataArray);
 
-        ctx.fillStyle = 'black';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        const color = document.getElementById('colorPicker').value;
+        const heightMult = parseFloat(document.getElementById('visualHeight').value);
+        const gap = parseInt(document.getElementById('barGap').value);
+        
+        const barWidth = (canvas.width / dataArray.length);
 
-        const barWidth = (canvas.width / barCount) * 0.8;
-        let x = (canvas.width - (barWidth * barCount)) / 2;
-
-        for (let i = 0; i < barCount; i++) {
-            const val = dataArray[i]; 
-            const barHeight = val * heightMult;
-
+        for (let i = 0; i < dataArray.length; i++) {
+            const barHeight = dataArray[i] * heightMult * 2;
             ctx.fillStyle = color;
             
-            roundRect(ctx, x, (canvas.height / 2) - (barHeight / 2), barWidth, barHeight, radius);
-
-            x += barWidth + (canvas.width / barCount) * 0.2;
+            ctx.fillRect(
+                i * barWidth, 
+                canvas.height - barHeight, 
+                barWidth - gap, 
+                barHeight
+            );
         }
     }
 
-    function roundRect(ctx, x, y, width, height, radius) {
-        ctx.beginPath();
-        ctx.moveTo(x + radius, y);
-        ctx.lineTo(x + width - radius, y);
-        ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-        ctx.lineTo(x + width, y + height - radius);
-        ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-        ctx.lineTo(x + radius, y + height);
-        ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-        ctx.lineTo(x, y + radius);
-        ctx.quadraticCurveTo(x, y, x + radius, y);
-        ctx.closePath();
-        ctx.fill();
-    }
-
-    // --- Recording Logic ---
-    recordBtn.onclick = () => {
-        if (!isRecording) {
-            startRecording();
-        } else {
-            stopRecording();
-        }
+    document.getElementById('recordBtn').onclick = () => {
+        if (!source) return alert("Upload audio first!");
+        startRecording();
     };
 
     function startRecording() {
         recordedChunks = [];
-        const stream = canvas.captureStream(60);
-        mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp9' });
+        const stream = canvas.captureStream(60); 
+        
+        const audioStream = audioCtx.createMediaStreamDestination();
+        source.connect(audioStream);
+        stream.addTrack(audioStream.stream.getAudioTracks()[0]);
 
-        mediaRecorder.ondataavailable = (e) => {
-            if (e.data.size > 0) recordedChunks.push(e.data);
-        };
+        mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp9', videoBitsPerSecond: 8000000 });
 
-        mediaRecorder.onstop = () => {
-            const blob = new Blob(recordedChunks, { type: 'video/webm' });
-            const url = URL.createObjectURL(blob);
-            const link = document.getElementById('downloadLink');
-            link.href = url;
-            link.download = 'visualizer_export.webm';
-            link.style.display = 'block';
-            link.innerText = "Download Exported Video";
-        };
+        mediaRecorder.ondataavailable = (e) => recordedChunks.push(e.data);
+        mediaRecorder.onstop = exportVideo;
 
-        mediaRecorder.start();
-        isRecording = true;
-        recordBtn.innerText = "Stop & Save Video";
-        recordBtn.style.background = "#ef4444";
+        source.stop();
+        initAudio(audioInput.files[0]);
+
+        setTimeout(() => {
+            mediaRecorder.start();
+            isRecording = true;
+            document.getElementById('recIndicator').style.display = 'block';
+            document.getElementById('status').innerText = "Recording entire track... please wait.";
+        }, 500);
     }
 
     function stopRecording() {
         mediaRecorder.stop();
         isRecording = false;
-        recordBtn.innerText = "Start Export (Record)";
-        recordBtn.style.background = "var(--accent)";
+        document.getElementById('recIndicator').style.display = 'none';
+        document.getElementById('status').innerText = "Export Complete!";
+    }
+
+    function exportVideo() {
+        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const link = document.getElementById('downloadLink');
+        link.href = url;
+        link.style.display = 'block';
+        link.download = 'visualizer_pro_export.webm';
     }
 </script>
-
 </body>
 </html>
